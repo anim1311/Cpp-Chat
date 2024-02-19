@@ -20,40 +20,33 @@
 #define BUFFER_SIZE 256
 
 
-class Server
+class Client
 {
 private:
     int sockfd;
-
     int portNumber;
     unsigned int clientLength;
     char buffer[BUFFER_SIZE];
-    struct sockaddr_in serverAddress;
+    struct sockaddr_in clientAddress;
+    
 
 public:
-    Server();
-    Server(int portNumber);
-    ~Server();
+    Client();
+    Client(const char *serverIP, int portNumber);
+    ~Client();
 
     int createSocket(int domain = AF_INET, int type = SOCK_STREAM, int protocol = 0);
     int bindSocket();
-    int listenForConnection( int backlog_queue_size = 5);
-    int acceptConnection(int *clientfd, struct sockaddr_in *clientAddress, unsigned int *clientLength);
+    int connectToServer(const char *serverIP);
     int readFromSocket(int clientfd);
     int writeToSocket(int clientfd,std::string message, int flags = 0);
-    void closeSocket();
-    void disconnectFromClient(int clientfd);
+    void closeClient();
 
-    int getPortNumber() const;
-    void setPortNumber(int portNumber);
-          
-    int getSocketFileDescriptor() const;
+
 
     std::string getBuffer() const;
-
     struct sockaddr_in getServerAddress() const;
 
-    
 };
 
 

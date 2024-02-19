@@ -78,14 +78,15 @@ int Server::acceptConnection(int *clientfd, struct sockaddr_in *clientAddress, u
 }
 
 
-void Server::readFromSocket(int clientfd)
+int Server::readFromSocket(int clientfd)
 {
     bzero(this->buffer, 256);
     int n = read(clientfd, this->buffer, 255);
     if (n < 0){
         std::cerr << "ERROR reading from socket"; // Use std::cerr instead of error
-        return;
+        
     }
+    return n;
 }
 
 int Server::writeToSocket(int clientfd,std::string message, int flags )
@@ -93,10 +94,8 @@ int Server::writeToSocket(int clientfd,std::string message, int flags )
     int n = send(clientfd, message.c_str(), message.length(),flags);
     if (n < 0){
         std::cerr << "ERROR writing to socket"; // Use std::cerr instead of error
-        return 1;
-        exit(1);
     }
-    return 0;
+    return n;
 }
 
 void Server::closeSocket()
@@ -138,3 +137,4 @@ void Server::disconnectFromClient(int clientfd)
 {
     close(clientfd);
 }
+
