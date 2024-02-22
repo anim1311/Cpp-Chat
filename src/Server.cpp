@@ -1,140 +1,201 @@
+/** 
+
+    * @author Anirudh Madhusudhan
+    * @package Server
+    * @brief This class is used to create a server and to listen to incoming connections
+
+*/
+
+
+#define PRINT_IP 1
+
+
 #include <Server.hpp>
 
-Server::Server()
-{
-    this->portNumber = 8080;
 
+Server::Server(){
+    this->portNumber = 8080;
+    this->clientLength = sizeof(this->serverAddress);
 
     std::cout << "Server created with default port number: " << this->portNumber << std::endl;
-    
-    this->createSocket();
 
+    this->createSocket();
     this->bindSocket();
+    this->setupKqueue();
+    
 }
 
-Server::Server(int portNumber)
-{
+Server::Server(int portNumber){
     this->portNumber = portNumber;
-
+    this->clientLength = sizeof(this->serverAddress);
 
     std::cout << "Server created with port number: " << this->portNumber << std::endl;
 
     this->createSocket();
     this->bindSocket();
-}   
+    this->setupKqueue();
 
-Server::~Server()
-{
-    std::cout << "Server destroyed" << std::endl;
-    closeSocket();
 }
 
-int Server::createSocket(int domain, int type , int protocol)
-{
-    this->sockfd = socket(domain, type, protocol);
-    if (this->sockfd < 0){
-        std::cerr << "ERROR opening socket"; // Use std::cerr instead of error
-        return 1;
-        exit(1);
+Server::~Server(){
+    this->closeKqueue();
+    this->closeServer();
+}
+
+int Server::createSocket(int domain, int type, int protocol){
+    this->socketFD = socket(domain, type, protocol);
+    if(this->socketFD < 0){
+        std::cerr << "Error creating socket" << std::endl;
+        return -1;
     }
     return 0;
 }
 
-int Server::bindSocket()
-{
+int Server::bindSocket(){
     bzero((char *) &this->serverAddress, sizeof(this->serverAddress));
     this->serverAddress.sin_family = AF_INET;
     this->serverAddress.sin_addr.s_addr = INADDR_ANY;
     this->serverAddress.sin_port = htons(this->portNumber);
 
-    if (bind(this->sockfd, (struct sockaddr *) &this->serverAddress, sizeof(this->serverAddress)) < 0){
-        std::cerr << "ERROR on binding"; // Use std::cerr instead of error
-        return 1;
-        exit(1);
+    if(bind(this->socketFD, (struct sockaddr *) &this->serverAddress, sizeof(this->serverAddress)) < 0){
+        std::cerr << "Error binding socket" << std::endl;
+        return -1;
     }
     return 0;
 }
 
-int Server::listenForConnection( int backlog_queue_size )
-{
-    int l = listen(this->sockfd, backlog_queue_size);
-    return l;
-}
-
-
-int Server::acceptConnection(int *clientfd, struct sockaddr_in *clientAddress, unsigned int *clientLength)
-{
-    this->clientLength = sizeof(*clientAddress);
-    *clientfd = accept(this->sockfd, (struct sockaddr *) clientAddress, clientLength);
-    
-    if (*clientfd < 0){
-        std::cerr << "ERROR on accept"; // Use std::cerr instead of error
-        return 1;
-        exit(1);
+int Server::listenForConnections(int backlog){
+    if(listen(this->socketFD, backlog) < 0){
+        std::cerr << "Error listening for connections" << std::endl;
+        return -1;
     }
-
-    std::cout << "Server: got connection from " << inet_ntoa(clientAddress->sin_addr) << std::endl;
     return 0;
 }
 
-
-int Server::readFromSocket(int clientfd)
-{
-    bzero(this->buffer, 256);
-    int n = read(clientfd, this->buffer, 255);
-    if (n < 0){
-        std::cerr << "ERROR reading from socket"; // Use std::cerr instead of error
-        
+int Server::acceptConnection(){
+    int clientfd = accept(this->socketFD, (struct sockaddr *) &this->serverAddress, &this->clientLength);
+    if(clientfd < 0){
+        std::cerr << "Error accepting connection" << std::endl;
+        return -1;
     }
-    return n;
+    return clientfd;
 }
 
-int Server::writeToSocket(int clientfd,std::string message, int flags )
-{
-    int n = send(clientfd, message.c_str(), message.length(),flags);
-    if (n < 0){
-        std::cerr << "ERROR writing to socket"; // Use std::cerr instead of error
+int Server::readFromSocket(int clientfd){
+    bzero(this->buffer, BUFFER_SIZE);
+    int bytesRead = read(clientfd, this->buffer, BUFFER_SIZE);
+    if(bytesRead < 0){
+        std::cerr << "Error reading from socket" << std::endl;
+        return -1;
     }
-    return n;
+    return bytesRead;
 }
 
-void Server::closeSocket()
-{
-    close(this->sockfd);
+int Server::writeToSocket(int clientfd, std::string message, int flags){
+    int bytesWritten = write(clientfd, message.c_str(), message.length());
+    if(bytesWritten < 0){
+        std::cerr << "Error writing to socket" << std::endl;
+        return -1;
+    }
+    return bytesWritten;
 }
 
-int Server::getPortNumber() const
-{
-    return this->portNumber;
+void Server::closeServer(){
+    close(this->socketFD);
 }
 
-void Server::setPortNumber(int portNumber)
-{
-    this->portNumber = portNumber;
-    closeSocket();
-
-    this->createSocket();
-    this->bindSocket();
-    
-}
-
-int Server::getSocketFileDescriptor() const
-{
-    return this->sockfd;
-}
-
-std::string Server::getBuffer() const
-{
-    return this->buffer;
-}
-
-struct sockaddr_in Server::getServerAddress() const
-{
-    return this->serverAddress;
-}
-
-void Server::disconnectFromClient(int clientfd)
-{
+void Server::disconnectClient(int clientfd){
     close(clientfd);
 }
 
+void Server::setupKqueue(){
+    this->kq = kqueue();
+    if(this->kq < 0){
+        std::cerr << "Error creating kqueue" << std::endl;
+    }
+}
+
+void Server::addEvent(int fd, int filter, int flags, void *udata){
+    struct kevent event;
+    EV_SET(&event, fd, filter, flags, 0, 0, udata);
+    if(kevent(this->kq, &event, 1, NULL, 0, NULL) < 0){
+        std::cerr << "Error adding event to kqueue" << std::endl;
+    }
+}
+
+void Server::removeEvent(int fd, int filter){
+    struct kevent event;
+    EV_SET(&event, fd, filter, EV_DELETE, 0, 0, NULL);
+    if(kevent(this->kq, &event, 1, NULL, 0, NULL) < 0){
+        std::cerr << "Error removing event from kqueue" << std::endl;
+    }
+}
+
+
+void Server::eventLoop() {
+
+    struct kevent eventSet;
+    struct kevent eventList[MAX_EVENTS];
+    struct timespec timeout = {10, 0}; // 10 seconds timeout
+
+    this->addEvent(this->socketFD, EVFILT_READ, EV_ADD, NULL);
+
+    while (true) {
+        // Timeout struct could be also NULL, to have it an eternal wait.
+        int nEvents = kevent(this->kq, NULL, 0, eventList, MAX_EVENTS, &timeout);
+
+        if (nEvents < 0) {
+            std::cerr << "kevent error" << std::endl;
+            continue; // Might reconsider a better exit lock or signal there.
+        } else if (nEvents == 0) {
+            std::cout << "No activity, check or play." << std::endl;
+            continue; 
+        }
+
+        for (int i = 0; i < nEvents; i++) {
+            if (eventList[i].ident == static_cast<uintptr_t>(this->socketFD)) { 
+
+                int newClientFD = this->acceptConnection();
+                if (newClientFD < 0) continue; 
+
+                this->addEvent(newClientFD, EVFILT_READ, EV_ADD, NULL);
+            } else {
+                int clientFD = eventList[i].ident; 
+                ssize_t bytesRead = this->readFromSocket(clientFD);
+                if (bytesRead < 0) {
+                    std::cerr << "Issues on the data flight from FD: " << clientFD << std::endl;
+                    this->disconnectClient(clientFD); 
+                } else if (bytesRead == 0) {
+                    this->disconnectClient(clientFD); 
+                } else {
+                    
+                    std::string message = this->getBuffer();
+                    #if PRINT_IP
+                    // print the ip of the client
+                    struct sockaddr_in clientAddress;
+                    socklen_t clientLength = sizeof(clientAddress);
+                    getpeername(clientFD, (struct sockaddr *)&clientAddress, &clientLength);
+                    std::cout << "Received message from " << inet_ntoa(clientAddress.sin_addr) << ": " << message << std::endl;
+                    #else
+                    std::cout << "Received message: " << message << std::endl;
+                    #endif
+                    this->writeToSocket(clientFD, "<h1>hello<\\h1>", 0);
+                }
+            }
+        }
+    }
+}
+
+
+
+void Server::closeKqueue(){
+    close(this->kq);
+}
+
+std::string Server::getBuffer() const{
+    return this->buffer;
+}
+
+struct sockaddr_in Server::getServerAddress() const{
+    return this->serverAddress;
+}
