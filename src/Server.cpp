@@ -11,6 +11,7 @@
 
 
 #include <Server.hpp>
+#include <fstream>
 
 
 Server::Server(){
@@ -179,7 +180,19 @@ void Server::eventLoop() {
                     #else
                     std::cout << "Received message: " << message << std::endl;
                     #endif
-                    this->writeToSocket(clientFD, "<h1>hello<\\h1>", 0);
+                    
+                    // Read file and send the contents
+                    
+
+
+                    std::string header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ";
+                    std::ifstream file("../src/test.html");
+                    std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+                    std::cout << body << std::endl;
+                    this->writeToSocket(clientFD, header + std::to_string(body.length()) + "\r\n\r\n" + body);
+            
+
                 }
             }
         }
